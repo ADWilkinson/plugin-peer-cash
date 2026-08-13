@@ -26,11 +26,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/zkp2p/plugin-peer-cash"
+    "url": "https://github.com/ADWilkinson/plugin-peer-cash"
   },
   "homepage": "https://peer.xyz/cash-sdk",
   "bugs": {
-    "url": "https://github.com/zkp2p/plugin-peer-cash/issues"
+    "url": "https://github.com/ADWilkinson/plugin-peer-cash/issues"
   },
   "exports": {
     "./package.json": "./package.json",
