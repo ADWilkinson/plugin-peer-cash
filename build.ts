@@ -12,6 +12,14 @@ function cleanBuild(outdir = "dist") {
     rmSync(outdir, { recursive: true, force: true });
     console.log(`Cleaned ${outdir} directory`);
   }
+  // A stale incremental state file makes tsc skip re-emitting declarations
+  // into the freshly cleaned dist, shipping a tarball without index.d.ts.
+  for (const info of ["tsconfig.build.tsbuildinfo", "tsconfig.tsbuildinfo"]) {
+    if (existsSync(info)) {
+      rmSync(info, { force: true });
+      console.log(`Cleaned ${info}`);
+    }
+  }
 }
 
 async function build() {
@@ -41,7 +49,7 @@ async function build() {
       return { success: true };
     })(),
     (async () => {
-      await $`tsc --emitDeclarationOnly --incremental --noCheck --project ./tsconfig.build.json`.quiet();
+      await $`tsc --emitDeclarationOnly --noCheck --project ./tsconfig.build.json`.quiet();
       console.log("TypeScript declarations generated");
     })(),
   ]);

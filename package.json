@@ -1,7 +1,7 @@
 {
   "name": "@davyjones0x/plugin-peer-cash",
   "description": "Peer Cash offramp actions for elizaOS agents: estimate, cash out Base USDC to Venmo, Revolut, Wise, Zelle, and more at the live oracle market rate, then track, withdraw, and top up orders.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
