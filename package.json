@@ -1,5 +1,5 @@
 {
-  "name": "@zkp2p/plugin-peer-cash",
+  "name": "@davyjones0x/plugin-peer-cash",
   "description": "Peer Cash offramp actions for elizaOS agents: estimate, cash out Base USDC to Venmo, Revolut, Wise, Zelle, and more at the live oracle market rate, then track, withdraw, and top up orders.",
   "version": "0.1.0",
   "type": "module",
@@ -26,7 +26,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ADWilkinson/plugin-peer-cash"
+    "url": "git+https://github.com/ADWilkinson/plugin-peer-cash.git"
   },
   "homepage": "https://peer.xyz/cash-sdk",
   "bugs": {

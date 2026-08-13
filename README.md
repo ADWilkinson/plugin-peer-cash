@@ -1,4 +1,4 @@
-# @zkp2p/plugin-peer-cash
+# @davyjones0x/plugin-peer-cash
 
 Peer Cash offramp for elizaOS agents. Your agent can cash out its Base USDC to a fiat payment app (Venmo, Revolut, Wise, Zelle, and more) through the Peer P2P protocol, then track the order, withdraw, or top it up.
 
@@ -25,10 +25,10 @@ Every funds-moving action asks the user to confirm in chat first and only submit
 ## Install
 
 ```bash
-bun add @zkp2p/plugin-peer-cash
+bun add @davyjones0x/plugin-peer-cash
 ```
 
-Add `@zkp2p/plugin-peer-cash` to your character's `plugins` array.
+Add `@davyjones0x/plugin-peer-cash` to your character's `plugins` array.
 
 ## Configuration
 
