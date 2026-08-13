@@ -1,0 +1,13 @@
+src/
+node_modules/
+*.tsbuildinfo
+.env
+.env.*
+coverage/
+build.ts
+biome.json
+vitest.config.ts
+tsconfig.json
+tsconfig.build.json
+registry-entry.json
+.DS_Store
