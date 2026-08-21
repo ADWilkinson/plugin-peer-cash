@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@zkp2p/plugin-peer-cash",
+      "name": "@davyjones0x/plugin-peer-cash",
       "dependencies": {
         "@elizaos/core": "2.0.3-beta.7",
         "@zkp2p/cash": "0.4.8",

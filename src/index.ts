@@ -1,5 +1,5 @@
 /**
- * Package entry for `@zkp2p/plugin-peer-cash`. Exports the plugin as both the
+ * Package entry for `@davyjones0x/plugin-peer-cash`. Exports the plugin as both the
  * default and a named export, plus the service, actions, provider, and
  * configuration types integrators may need.
  */
