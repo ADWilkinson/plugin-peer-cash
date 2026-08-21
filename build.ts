@@ -24,7 +24,7 @@ function cleanBuild(outdir = "dist") {
 
 async function build() {
   const start = performance.now();
-  console.log("Building @zkp2p/plugin-peer-cash...");
+  console.log("Building @davyjones0x/plugin-peer-cash...");
 
   cleanBuild("dist");
 

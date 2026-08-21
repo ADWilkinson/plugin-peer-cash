@@ -22,7 +22,7 @@ const EXPECTED_ACTIONS = [
 describe("peerCashPlugin", () => {
   it("registers every action, the provider, the service, and the test suite", () => {
     expect(peerCashPlugin.name).toBe("plugin-peer-cash");
-    expect(packageJson.name).toBe("@zkp2p/plugin-peer-cash");
+    expect(packageJson.name).toBe("@davyjones0x/plugin-peer-cash");
     expect(peerCashPlugin.actions?.map((action) => action.name)).toEqual(EXPECTED_ACTIONS);
     expect(peerCashPlugin.providers?.map((provider) => provider.name)).toEqual([
       "PEER_CASH_STATUS",
