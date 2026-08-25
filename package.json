@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "@elizaos/core": "2.0.3-beta.7",
-    "@zkp2p/cash": "0.4.8",
+    "@zkp2p/cash": "0.4.10",
     "viem": "^2.48.8",
     "zod": "^4.4.3"
   },
