@@ -1,7 +1,7 @@
 {
   "name": "@davyjones0x/plugin-peer-cash",
   "description": "Peer Cash offramp actions for elizaOS agents: estimate, cash out Base USDC to Venmo, Revolut, Wise, Zelle, and more at the live oracle market rate, then track, withdraw, and top up orders.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -65,14 +65,14 @@
   },
   "scripts": {
     "build": "bun run build.ts",
-    "lint": "biome check --write --unsafe ./src",
-    "lint:check": "biome check ./src",
+    "lint": "biome check --write --unsafe ./src ./scripts",
+    "lint:check": "biome check ./src ./scripts",
     "typecheck": "tsc --noEmit",
     "test:component": "vitest run src/__tests__",
     "test:e2e": "vitest run src/e2e",
     "test": "bun run test:component && bun run test:e2e",
-    "format": "biome format --write ./src",
-    "format:check": "biome format ./src"
+    "format": "biome format --write ./src ./scripts",
+    "format:check": "biome format ./src ./scripts"
   },
   "publishConfig": {
     "access": "public"
