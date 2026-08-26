@@ -73,6 +73,16 @@ bun run build
 
 Tests mock the cash client surface and never touch the network. The e2e lane runs the plugin's TestSuite against a real in-memory `AgentRuntime`. For live verification against `staging`, follow the maker-side checklist in the [SDK agent manual](https://github.com/zkp2p/peer-cash/blob/main/AGENTS.md).
 
+## Release
+
+A merge to `main` is not a publication. The npm package is the distribution surface.
+
+1. Bump `package.json` `version` in its own PR and merge once `check` is green.
+2. Tag the merge commit (`git tag v0.1.2 && git push origin v0.1.2`).
+3. The `release` workflow runs the same gate as `check`, refuses a tag/`package.json` mismatch or an already-published version, then publishes with npm provenance.
+
+`workflow_dispatch` defaults to a dry run. A real publish needs npm Trusted Publishing for `release.yml` on this repository, or an `NPM_TOKEN` repository secret.
+
 ## Links
 
 SDK → https://www.npmjs.com/package/@zkp2p/cash
