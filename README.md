@@ -77,11 +77,28 @@ Tests mock the cash client surface and never touch the network. The e2e lane run
 
 A merge to `main` is not a publication. The npm package is the distribution surface.
 
+A publish needs a registry credential, and this repository has none yet. Configure
+one of these first, once:
+
+- **npm Trusted Publishing (preferred).** On npmjs.com, add a trusted publisher to
+  `@davyjones0x/plugin-peer-cash` for repository `ADWilkinson/plugin-peer-cash` and
+  workflow `release.yml`. No stored secret. The workflow provisions npm `11.19.0`,
+  because trusted publishing needs npm >= 11.5.1 on Node >= 22.14.0.
+- **`NPM_TOKEN` secret.** A granular automation token with publish rights on the
+  package, stored as a repository secret.
+
+Then, per release:
+
 1. Bump `package.json` `version` in its own PR and merge once `check` is green.
 2. Tag the merge commit (`git tag v0.1.2 && git push origin v0.1.2`).
-3. The `release` workflow runs the same gate as `check`, refuses a tag/`package.json` mismatch or an already-published version, then publishes with npm provenance.
+3. The `release` workflow checks the credential, refuses a tag/`package.json`
+   mismatch or an already-published version, runs the same gate as `check`, then
+   publishes with npm provenance.
 
-`workflow_dispatch` defaults to a dry run. A real publish needs npm Trusted Publishing for `release.yml` on this repository, or an `NPM_TOKEN` repository secret.
+The credential and tag checks run before the gate on purpose: a pushed tag is
+immutable, so a release that cannot succeed must fail in seconds rather than after
+a full build. `workflow_dispatch` defaults to a dry run, which needs no credential
+and never publishes.
 
 ## Links
 
