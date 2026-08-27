@@ -27,16 +27,50 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Decide once whether this run publishes for real, so the credential
+      # preflight and the publish step cannot drift apart.
+      - name: Resolve publish mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ]; then
+            echo "PUBLISH_MODE=dry" >> "$GITHUB_ENV"
+          else
+            echo "PUBLISH_MODE=real" >> "$GITHUB_ENV"
+          fi
+
+      # A tag is immutable once pushed, so a doomed release must fail here
+      # rather than after the gate, inside npm publish, with ENEEDAUTH.
+      - name: Preflight publish credentials
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "$PUBLISH_MODE" != "real" ]; then
+            echo "Dry run: no registry credentials needed."
+            exit 0
+          fi
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "PUBLISH_AUTH=token" >> "$GITHUB_ENV"
+            echo "Publishing with the NPM_TOKEN repository secret."
+            exit 0
+          fi
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::No publish credential. NPM_TOKEN is unset and no OIDC token can be minted (needs permissions.id-token: write; unavailable to forks). Set the NPM_TOKEN secret or run this workflow from the base repository."
+            exit 1
+          fi
+          echo "PUBLISH_AUTH=oidc" >> "$GITHUB_ENV"
+          echo "NPM_TOKEN is unset; relying on npm Trusted Publishing via OIDC."
+          echo "::notice::This run publishes via OIDC. It fails unless npmjs.com has a trusted publisher configured for ${GITHUB_REPOSITORY} / release.yml."
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun run lint:check
-      - run: bun run test
-      - run: bun run build
-      - name: Require declaration emit
-        run: test -f dist/index.js && test -f dist/index.d.ts
+
+      # Cheap and decisive: reject a tag/version mismatch or an already
+      # published version before spending the gate on it.
       - name: Guard version and registry
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
@@ -44,19 +78,37 @@ jobs:
           else
             bun scripts/assert-publishable.ts
           fi
+
+      - run: bun run typecheck
+      - run: bun run lint:check
+      - run: bun run test
+      - run: bun run build
+      - name: Require declaration emit
+        run: test -f dist/index.js && test -f dist/index.d.ts
+
+      # npm Trusted Publishing needs npm >= 11.5.1 on Node >= 22.14.0.
+      # Node 24's bundled npm already clears that; the explicit pin keeps the
+      # publishing CLI as deterministic as the rest of this workflow.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
+      - name: Pin npm
+        run: |
+          npm install -g npm@11.19.0
+          npm --version
+
+      # Trusted publishing attests provenance on its own; --provenance is only
+      # needed on the token path.
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ]; then
+          if [ "$PUBLISH_MODE" = "dry" ]; then
             npm publish --dry-run --access public
+          elif [ "$PUBLISH_AUTH" = "oidc" ]; then
+            npm publish --access public
           else
             npm publish --provenance --access public
           fi
