@@ -30,6 +30,10 @@ bun add @davyjones0x/plugin-peer-cash
 
 Add `@davyjones0x/plugin-peer-cash` to your character's `plugins` array.
 
+`@elizaos/core` is a peer dependency, so the plugin runs on the host's core rather than
+installing a second copy of it. elizaOS 2.x is required; a 1.x host will report a peer conflict
+instead of failing later inside the runtime.
+
 ## Configuration
 
 | Variable | Required | Default | Notes |
