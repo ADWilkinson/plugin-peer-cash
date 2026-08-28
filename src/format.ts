@@ -58,6 +58,20 @@ export function formatOrderListText(orders: CashOrder[], owner: string): string 
   return [`Peer Cash orders for ${owner} (${orders.length}):`, ...rows].join("\n");
 }
 
+/**
+ * Fills for one platform over the 30-day window. `CashFillStats` keys a single
+ * fill under both its `platform:CURRENCY` pair and, when the deposit offered
+ * several currencies, an aggregate `platform:EUR+GBP+USD` set key. Only the
+ * single-currency pairs are summed, or every multi-currency corridor would be
+ * counted twice.
+ */
+function platformFills(fillStats: CashFillStats, platform: string): number {
+  const prefix = `${platform}:`;
+  return Object.entries(fillStats)
+    .filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes("+"))
+    .reduce((sum, [, value]) => sum + value.fills, 0);
+}
+
 export function formatCapabilitiesText(
   capabilities: CashCapabilities,
   fillStats: CashFillStats | null,
@@ -74,11 +88,7 @@ export function formatCapabilitiesText(
     const attestation = platform.requiresIdentityAttestation
       ? " (new payees need a Peer identity attestation)"
       : "";
-    const stats = fillStats
-      ? Object.entries(fillStats)
-          .filter(([key]) => key.startsWith(`${platform.platform}:`))
-          .reduce((sum, [, value]) => sum + value.fills, 0)
-      : null;
+    const stats = fillStats ? platformFills(fillStats, platform.platform) : null;
     const statsSuffix = stats !== null && stats > 0 ? ` [${stats} fills in the last 30 days]` : "";
     lines.push(
       `- ${platform.platform}: ${platform.currencies.join(", ")}; payee: ${platform.payeeHint}` +
