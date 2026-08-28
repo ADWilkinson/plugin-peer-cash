@@ -1,5 +1,6 @@
 /**
- * Capabilities action tests: catalog rendering with fill evidence, the
+ * Capabilities action tests: catalog rendering with fill evidence, per-platform
+ * fill counting across the SDK's pair and multi-currency-set keys, the
  * fail-open path when fill stats are unavailable, and the stats opt-out.
  */
 
@@ -64,6 +65,31 @@ describe("PEER_CASH_CAPABILITIES", () => {
     expect(result?.text).toContain("Fill statistics are temporarily unavailable");
     expect(result?.data?.fillStatsUnavailable).toBeDefined();
     expect(result?.data?.fillStats).toBeUndefined();
+  });
+
+  it("counts a multi-currency corridor's fills once, not once per stats key", async () => {
+    // The SDK records one fill under both its `platform:CURRENCY` pair and the
+    // deposit's aggregate `platform:EUR+GBP+USD` set key.
+    const client = createMockCashClient({
+      fillStats: vi.fn(async () => ({
+        "revolut:EUR": { fills: 3 },
+        "revolut:GBP": { fills: 2 },
+        "revolut:EUR+GBP+USD": { fills: 5 },
+      })),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+
+    const result = await peerCashCapabilitiesAction.handler(
+      runtime,
+      message(),
+      emptyState,
+      {},
+      undefined,
+    );
+
+    expect(result?.success).toBe(true);
+    expect(result?.text).toContain("[5 fills in the last 30 days]");
+    expect(result?.text).not.toContain("[10 fills in the last 30 days]");
   });
 
   it("skips the stats read when includeFillStats is false", async () => {
