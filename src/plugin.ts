@@ -18,7 +18,12 @@ import {
   peerCashWithdrawAction,
 } from "./actions/index.js";
 import { PeerCashTestSuite } from "./e2e/suite.js";
-import { PEER_CASH_SETTING_KEYS, resolvePeerCashConfig } from "./environment.js";
+import {
+  PEER_CASH_SENSITIVE_SETTING_KEYS,
+  PEER_CASH_SETTING_KEYS,
+  readSetting,
+  resolvePeerCashConfig,
+} from "./environment.js";
 import { peerCashProvider } from "./providers/index.js";
 import { PeerCashService } from "./service.js";
 
@@ -39,13 +44,18 @@ export const peerCashPlugin: Plugin = {
 
   async init(config: Record<string, string>, runtime: IAgentRuntime): Promise<void> {
     // Character-level plugin config becomes visible to the service's later
-    // settings resolution the same way the starter template propagates it.
-    // Only this plugin's own keys are copied, and only when set.
+    // settings resolution. It is written to this agent's own runtime settings,
+    // never to `process.env`: a process-global write leaks one agent's
+    // environment, referral code, or signing key into every other agent
+    // sharing the host, because `readSetting()` falls back to `process.env`
+    // for any agent that has no value of its own. Only this plugin's keys are
+    // copied, only when set, and never over a value the agent already
+    // resolves.
     for (const key of PEER_CASH_SETTING_KEYS) {
       const value = config[key];
-      if (typeof value === "string" && value.trim() !== "") {
-        process.env[key] = value;
-      }
+      if (typeof value !== "string" || value.trim() === "") continue;
+      if (readSetting(runtime, key) !== undefined) continue;
+      runtime.setSetting(key, value, PEER_CASH_SENSITIVE_SETTING_KEYS.has(key));
     }
     const resolved = resolvePeerCashConfig(runtime);
     logger.info(

@@ -115,7 +115,15 @@ export const PEER_CASH_SETTING_KEYS = [
   "EVM_PRIVATE_KEY",
 ] as const;
 
-type PeerCashSettingKey = (typeof PEER_CASH_SETTING_KEYS)[number];
+export type PeerCashSettingKey = (typeof PEER_CASH_SETTING_KEYS)[number];
+
+/**
+ * Settings that must never be written anywhere an unrelated agent can read
+ * them. Stored as runtime secrets rather than plain settings.
+ */
+export const PEER_CASH_SENSITIVE_SETTING_KEYS: ReadonlySet<PeerCashSettingKey> = new Set([
+  "EVM_PRIVATE_KEY",
+]);
 
 /**
  * Per-agent runtime setting first, `process.env` second. Core's

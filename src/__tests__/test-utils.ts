@@ -47,19 +47,32 @@ export interface MockRuntimeOptions {
   services?: Record<string, unknown>;
 }
 
+const mockRuntimeSecrets = new WeakMap<IAgentRuntime, Set<string>>();
+
+/** Keys the caller stored through `setSetting(..., secret = true)`. */
+export function mockRuntimeSecretKeys(runtime: IAgentRuntime): ReadonlySet<string> {
+  return mockRuntimeSecrets.get(runtime) ?? new Set<string>();
+}
+
 /**
  * Minimal runtime double covering exactly what the plugin touches:
- * `getSetting`, `getService`, and the cache trio used by the confirmation
- * gate.
+ * `getSetting`/`setSetting`, `getService`, and the cache trio used by the
+ * confirmation gate. Settings are per-runtime, mirroring real agent isolation.
  */
 export function createMockRuntime(options: MockRuntimeOptions = {}): IAgentRuntime {
   const settings = new Map(Object.entries(options.settings ?? {}));
   const services = new Map(Object.entries(options.services ?? {}));
   const cache = new Map<string, unknown>();
+  const secretKeys = new Set<string>();
 
   const runtime = {
     agentId: createUUID(),
     getSetting: (key: string) => settings.get(key) ?? null,
+    setSetting: (key: string, value: string | boolean | null, secret = false) => {
+      if (value === null) return;
+      settings.set(key, String(value));
+      if (secret) secretKeys.add(key);
+    },
     getService: (serviceType: string) => services.get(serviceType) ?? null,
     getCache: async <T>(key: string): Promise<T | undefined> => cache.get(key) as T | undefined,
     setCache: async (key: string, value: unknown): Promise<boolean> => {
@@ -68,7 +81,9 @@ export function createMockRuntime(options: MockRuntimeOptions = {}): IAgentRunti
     },
     deleteCache: async (key: string): Promise<boolean> => cache.delete(key),
   };
-  return runtime as unknown as IAgentRuntime;
+  const typed = runtime as unknown as IAgentRuntime;
+  mockRuntimeSecrets.set(typed, secretKeys);
+  return typed;
 }
 
 export function createTestMessage(text: string, entityId?: UUID): Memory {

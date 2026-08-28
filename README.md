@@ -46,6 +46,11 @@ instead of failing later inside the runtime.
 
 Invalid configuration fails plugin initialization with the exact problem, not the first cash-out.
 
+Settings are read per agent: the agent's own runtime setting first, then `process.env`. Plugin
+config passed to `init` is applied to that agent alone and never written back to `process.env`,
+so on a host running several agents in one process one agent's environment, referral code, or
+`EVM_PRIVATE_KEY` cannot become another agent's default.
+
 ## Wallet
 
 The agent signs with its own wallet. The plugin looks for a registered wallet backend service first (the `@elizaos/plugin-wallet` convention, service type `wallet-backend`) and uses its EVM account on Base. If none is registered it falls back to `EVM_PRIVATE_KEY`. The integration is duck-typed, so there is no hard dependency on the wallet plugin.
