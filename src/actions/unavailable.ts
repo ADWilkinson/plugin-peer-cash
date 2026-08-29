@@ -20,6 +20,9 @@ export async function serviceUnavailableResult(
   return {
     success: false,
     text,
+    // Names the exact setting to check; echoed rather than paraphrased for
+    // the same reason as every other failure text here.
+    userFacingText: text,
     error: "peer-cash service not registered",
     data: { error: "SERVICE_NOT_REGISTERED" },
   };
