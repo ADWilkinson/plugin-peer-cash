@@ -94,6 +94,12 @@ export const peerCashCapabilitiesAction: Action = {
       return {
         success: true,
         text,
+        // The catalog is all identifiers and counts - platform ids, currency
+        // codes, payee formats, amount bounds, fill numbers. Marked canonical
+        // so the planner echoes it verbatim instead of paraphrasing a
+        // corridor or a minimum the agent would then act on.
+        userFacingText: text,
+        verifiedUserFacing: true,
         values: {
           peerCashPlatformCount: capabilities.platforms.length,
           peerCashEnvironment: capabilities.environment,
