@@ -5,9 +5,11 @@
  * payout corridors, oracle rates, fill numbers - and core's planner loop only
  * echoes an action's text verbatim when the result carries `userFacingText`;
  * `verifiedUserFacing: true` additionally outranks the evaluator, but core
- * consults it on successful steps only. Without `userFacingText` the terminal
- * reply is the model's paraphrase of those numbers. This suite fails when any
- * verb drops it.
+ * consults it only on a step that succeeded and only when it is the turn's
+ * single successful step. Without `userFacingText` the terminal reply is the
+ * model's paraphrase of those numbers. This suite fails when any verb drops
+ * it; the coverage test below keeps the case lists equal to the plugin's own
+ * registration.
  */
 
 import type { Action, ActionResult, IAgentRuntime, JsonValue, Memory } from "@elizaos/core";
@@ -70,14 +72,6 @@ const writeCases: Array<[Action, Record<string, JsonValue>]> = [
   [peerCashTopUpAction, { depositId: "base_412", amount: 50 }],
 ];
 
-/** All registered verbs, so a new one cannot skip the contracts below. */
-const registeredActions: Action[] = [...(peerCashPlugin.actions ?? [])];
-
-/** Parameters that reach each verb's own logic rather than a validation throw. */
-const parametersByAction: Record<string, Record<string, JsonValue>> = Object.fromEntries(
-  [...readCases, ...writeCases].map(([action, parameters]) => [action.name, parameters]),
-);
-
 describe("canonical user-facing text", () => {
   it.each(readCases)("$name marks its read result canonical", async (action, parameters) => {
     const { runtime } = createRuntimeWithService();
@@ -130,7 +124,11 @@ describe("canonical confirmation preview", () => {
     const result = await run(action, runtime, createTestMessage("no"), parameters);
 
     expect(result.success).toBe(false);
+    expect(result.text).toBeTruthy();
     expect(result.userFacingText).toBe(result.text);
+    // The override is success-gated in core, so claiming it here would be
+    // inert; the cancellation rides the `userFacingText` fallback instead.
+    expect(result.verifiedUserFacing).not.toBe(true);
   });
 
   it("submits nothing until the preview the user saw is confirmed", async () => {
@@ -156,18 +154,14 @@ describe("canonical failure text", () => {
   // A failed step's text carries the SDK error code, the retryable flag, and
   // the remediation sentence. Core reads `userFacingText` on any step for the
   // fallback reply, so a failure without it degrades to a generic apology.
-  it.each(registeredActions)(
+  it.each([...readCases, ...writeCases])(
     "$name marks a service-unavailable result canonical",
-    async (action) => {
+    async (action, parameters) => {
       const runtime = createMockRuntime();
-      const result = await run(
-        action,
-        runtime,
-        createTestMessage("ask"),
-        parametersByAction[action.name] ?? {},
-      );
+      const result = await run(action, runtime, createTestMessage("ask"), parameters);
 
       expect(result.success).toBe(false);
+      expect(result.text).toBeTruthy();
       expect(result.userFacingText).toBe(result.text);
     },
   );

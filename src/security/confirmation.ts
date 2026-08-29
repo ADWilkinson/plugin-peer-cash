@@ -129,15 +129,20 @@ export function peerCashGateActionResult(
     success: awaiting,
     text: gate.text,
     // The preview is the text the user answers "yes" to, while the pending
-    // key binds the real amount, payee, platform, and order. Marked canonical
-    // so the planner echoes those terms verbatim: a paraphrase that drops the
-    // payee or rounds the amount is confirmed against terms never shown. On
-    // the pending turn this is also the only successful step, so without the
-    // pair core would replan instead of finishing the ask.
+    // key binds the real amount, payee, platform, and order. A paraphrase
+    // that drops the payee or rounds the amount is confirmed against terms
+    // never shown. `userFacingText` alone also keeps core from treating a
+    // finished confirmation turn as a silent finish and replanning it - on
+    // replan the second `requireConfirmation` call finds the still-fresh
+    // pending record, matches the original request text against neither the
+    // confirm nor the cancel regex, and cancels the operation mid-turn.
     userFacingText: gate.text,
-    // Only the pending turn is a successful step, and core consults the
-    // override on successful steps alone; the cancellation notice relies on
-    // `userFacingText` like every other non-success reply here.
+    // Marks the preview canonical so it outranks the evaluator's message.
+    // Only on the pending turn: core consults this override on successful
+    // steps alone, so setting it on the cancellation would be inert. Note
+    // the override also needs the gated action to be the turn's *only*
+    // successful step; when the planner pairs a read verb with the write in
+    // one turn, `userFacingText` is what still carries the exact terms.
     verifiedUserFacing: awaiting,
     values: {
       peerCashActionPrepared: awaiting,
