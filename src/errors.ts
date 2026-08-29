@@ -50,6 +50,13 @@ export function cashFailureResult(error: unknown, context: string): ActionResult
   return {
     success: false,
     text: failure.text,
+    // Carries the SDK error code, the retryable flag, and the remediation
+    // sentence. Core reads `userFacingText` on any step for its fallback
+    // reply, so without it a failed cash verb degrades to a generic apology
+    // that tells the agent nothing about whether funds moved. The
+    // `verifiedUserFacing` override is deliberately not set: core consults it
+    // on successful steps only.
+    userFacingText: failure.text,
     error: failure.message,
     data: failure.data,
   };
