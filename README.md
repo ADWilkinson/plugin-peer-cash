@@ -61,7 +61,7 @@ Hosts that keep custody elsewhere (AA bundlers, policy engines, human approval s
 
 - Non-custodial. Funds sit in the Peer protocol escrow contract, and only the maker wallet can withdraw an unmatched deposit. There is no provider custody and no API key.
 - `PEER_CASH_ESTIMATE` is an oracle estimate, not a locked quote. The binding rate resolves at the Chainlink oracle when a buyer fills. The plugin never presents an estimate as a committed price.
-- Every funds-moving action requires a fresh user confirmation turn. LLM-supplied flags cannot bypass the gate.
+- Every funds-moving action requires a fresh user confirmation turn. The prompt ends the turn, so no later planner step can answer it on the user's behalf, and LLM-supplied flags cannot bypass the gate.
 - Errors are typed. Every failure surfaces the SDK's error code, whether it is retryable, and the remediation sentence, including recovery evidence for uncertain transaction states.
 - Venmo, Cash App, and PayPal orders attach an access policy transaction after the deposit confirms. The plugin reports its hash, and a policy failure surfaces the recovery data instead of retrying blind.
 - Wise and PayPal need a Peer identity attestation for new payee registrations, which first-party Peer web obtains through the Peer TEE browser extension. Already registered handles work directly. `PEER_CASH_CAPABILITIES` flags these platforms.

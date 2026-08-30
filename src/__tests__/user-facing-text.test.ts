@@ -7,9 +7,10 @@
  * `verifiedUserFacing: true` additionally outranks the evaluator, but core
  * consults it only on a step that succeeded and only when it is the turn's
  * single successful step. Without `userFacingText` the terminal reply is the
- * model's paraphrase of those numbers. This suite fails when any verb drops
- * it; the coverage test below keeps the case lists equal to the plugin's own
- * registration.
+ * model's paraphrase of those numbers, and without `continueChain: false` the
+ * confirmation prompt is not even the turn's last word. This suite fails when
+ * any verb drops either; the coverage test below keeps the case lists equal to
+ * the plugin's own registration.
  */
 
 import type { Action, ActionResult, IAgentRuntime, JsonValue, Memory } from "@elizaos/core";
@@ -115,6 +116,39 @@ describe("canonical confirmation preview", () => {
       expect(result.data?.awaitingUserInput).toBe(true);
       expect(result.verifiedUserFacing).toBe(true);
       expect(result.userFacingText).toBe(result.text);
+      // Ends the turn on the ask, so nothing plans past a gate still waiting
+      // on the user. See the re-entry test below for what that prevents.
+      expect(result.continueChain).toBe(false);
+    },
+  );
+
+  // The hazard the halt exists to stop, driven directly because a unit test
+  // cannot run core's planner loop. Core's confirm regex is anchored at the
+  // start of the message and accepts "ok", "sure", "do it", "go ahead"; on a
+  // second call inside one turn it tests that regex against the original
+  // request, so a request opening with one of those words confirms itself.
+  const reentryCases: Array<[string, string, number]> = [
+    ["go ahead and cash out 100 USDC to @alice on venmo", "submit unapproved", 1],
+    ["do it", "submit unapproved", 1],
+    ["cash out 100 USDC to @alice on venmo", "cancel mid-approval", 0],
+  ];
+
+  it.each(reentryCases)(
+    "re-entering the gate on %j would %s",
+    async (request, _outcome, submissions) => {
+      const { runtime, client } = createRuntimeWithService();
+      const parameters = { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" };
+      const message = createTestMessage(request);
+      const call = () => run(peerCashCashoutAction, runtime, message, parameters);
+
+      const prompt = await call();
+      const reentry = await call();
+
+      // The prompt halting the chain is what keeps the second call from ever
+      // happening; the second call's outcome is why that matters.
+      expect(prompt.continueChain).toBe(false);
+      expect(reentry.text).not.toBe(prompt.text);
+      expect(client.cashout).toHaveBeenCalledTimes(submissions);
     },
   );
 
@@ -129,6 +163,28 @@ describe("canonical confirmation preview", () => {
     // The override is success-gated in core, so claiming it here would be
     // inert; the cancellation rides the `userFacingText` fallback instead.
     expect(result.verifiedUserFacing).not.toBe(true);
+    // A decline ends the turn too. Planning on would re-arm a fresh pending
+    // record for the terms just refused, which the user's next confirm-shaped
+    // message would release.
+    expect(result.continueChain).toBe(false);
+  });
+
+  it("a declined operation leaves no gate armed behind it", async () => {
+    const { runtime, client } = createRuntimeWithService();
+    const parameters = { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" };
+    const call = (text: string) =>
+      run(peerCashCashoutAction, runtime, createTestMessage(text), parameters);
+
+    await call("cash out 100 USDC to @alice on venmo");
+    const declined = await call("no");
+    // What a planner loop that ignored the halt would do: re-plan the write,
+    // arm a new record, and hand the next yes an operation the user refused.
+    const rearmed = await call("cash out 100 USDC to @alice on venmo");
+    await call("yes");
+
+    expect(declined.continueChain).toBe(false);
+    expect(rearmed.data?.confirmationStatus).toBe("pending");
+    expect(client.cashout).toHaveBeenCalledTimes(1);
   });
 
   it("submits nothing until the preview the user saw is confirmed", async () => {
