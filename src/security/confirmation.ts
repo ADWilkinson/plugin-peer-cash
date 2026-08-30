@@ -128,21 +128,37 @@ export function peerCashGateActionResult(
   return {
     success: awaiting,
     text: gate.text,
+    // The gate said wait or no, so the turn ends here. `continueChain: false`
+    // is the only lever core reads to stop its planner loop; the
+    // `requiresConfirmation` and `awaitingUserInput` flags below are
+    // diagnostics core never consults. Let the loop run on and it plans
+    // another call in the same turn, and both outcomes move funds the user
+    // never approved:
+    //
+    // - After a prompt, the re-entry consumes the still-fresh pending record
+    //   and tests core's confirm regex against the *original request*. That
+    //   regex is anchored at the start of the text and accepts "ok", "sure",
+    //   "do it", "go ahead", "yes". A request that opens with any of them
+    //   confirms itself, and the cash-out submits on the turn the user was
+    //   only ever shown the preview.
+    // - After a decline, the re-plan finds no record and arms a fresh one for
+    //   the terms just refused, live for core's five-minute TTL, releasable
+    //   by the next confirm-shaped message the user sends about anything.
+    //
+    // Halting also makes this result's `text` the turn's final message
+    // verbatim, so the preview the pending key binds is what the user answers.
+    continueChain: false,
     // The preview is the text the user answers "yes" to, while the pending
     // key binds the real amount, payee, platform, and order. A paraphrase
     // that drops the payee or rounds the amount is confirmed against terms
-    // never shown. `userFacingText` alone also keeps core from treating a
-    // finished confirmation turn as a silent finish and replanning it - on
-    // replan the second `requireConfirmation` call finds the still-fresh
-    // pending record, matches the original request text against neither the
-    // confirm nor the cancel regex, and cancels the operation mid-turn.
+    // never shown. The halt above already carries `text` through core's
+    // final-message path; this is the fallback for any host that resolves the
+    // reply some other way.
     userFacingText: gate.text,
-    // Marks the preview canonical so it outranks the evaluator's message.
-    // Only on the pending turn: core consults this override on successful
-    // steps alone, so setting it on the cancellation would be inert. Note
-    // the override also needs the gated action to be the turn's *only*
-    // successful step; when the planner pairs a read verb with the write in
-    // one turn, `userFacingText` is what still carries the exact terms.
+    // Belt and braces behind the halt: were the reply ever to reach the
+    // evaluator, this outranks its paraphrase. Only on the pending turn -
+    // core consults the override on successful steps alone, so setting it on
+    // the cancellation would be inert.
     verifiedUserFacing: awaiting,
     values: {
       peerCashActionPrepared: awaiting,
