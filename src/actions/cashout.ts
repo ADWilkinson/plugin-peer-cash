@@ -183,6 +183,17 @@ export const peerCashCashoutAction: Action = {
         text,
         userFacingText: text,
         verifiedUserFacing: true,
+        // The USDC is in escrow now, and this text carries the only keys that
+        // reach it again: the deposit id, the deposit transaction, and any
+        // access-policy hash. `verifiedUserFacing` alone does not protect
+        // them - core lets a canonical result outrank the evaluator only when
+        // it is the turn's *single* successful step, so one more successful
+        // step (the estimate a planner ran first, the status read it plans
+        // next) drops the receipt to the model's paraphrase of it, and a
+        // paraphrased or omitted deposit id is an order the user cannot
+        // track, top up, or withdraw. Halting ends the turn on this text
+        // verbatim, and nothing needs to follow a submitted deposit.
+        continueChain: false,
         values: {
           peerCashActionSucceeded: true,
           peerCashDepositId: result.depositId,
