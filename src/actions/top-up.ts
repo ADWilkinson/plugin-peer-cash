@@ -108,6 +108,10 @@ export const peerCashTopUpAction: Action = {
         text,
         userFacingText: text,
         verifiedUserFacing: true,
+        // Same halt the cash-out receipt takes: the order id and transaction
+        // hash reach the user verbatim only while this is the turn's last
+        // word.
+        continueChain: false,
         values: {
           peerCashActionSucceeded: true,
           peerCashDepositId: result.depositId,

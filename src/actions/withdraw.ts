@@ -128,6 +128,11 @@ export const peerCashWithdrawAction: Action = {
         text,
         userFacingText: text,
         verifiedUserFacing: true,
+        // Same halt the cash-out receipt takes, for the same reason: the
+        // withdrawal and prune hashes are the evidence the unwind happened,
+        // and core's canonical override survives a turn only while this is
+        // its single successful step.
+        continueChain: false,
         values: {
           peerCashActionSucceeded: true,
           peerCashDepositId: result.depositId,

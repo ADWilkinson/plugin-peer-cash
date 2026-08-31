@@ -7,10 +7,12 @@
  * `verifiedUserFacing: true` additionally outranks the evaluator, but core
  * consults it only on a step that succeeded and only when it is the turn's
  * single successful step. Without `userFacingText` the terminal reply is the
- * model's paraphrase of those numbers, and without `continueChain: false` the
- * confirmation prompt is not even the turn's last word. This suite fails when
- * any verb drops either; the coverage test below keeps the case lists equal to
- * the plugin's own registration.
+ * model's paraphrase of those numbers, and without `continueChain: false`
+ * neither the confirmation prompt nor the receipt that follows it is even the
+ * turn's last word - a second successful step in the same turn is enough to
+ * spend the single-step budget the override needs. This suite fails when any
+ * verb drops either; the coverage test below keeps the case lists equal to the
+ * plugin's own registration.
  */
 
 import type { Action, ActionResult, IAgentRuntime, JsonValue, Memory } from "@elizaos/core";
@@ -27,6 +29,7 @@ import {
 } from "../actions/index.js";
 import { peerCashPlugin } from "../plugin.js";
 import {
+  cashoutResultFixture,
   createMockCashClient,
   createMockRuntime,
   createRuntimeWithService,
@@ -89,6 +92,37 @@ describe("canonical user-facing text", () => {
     expect(result.success).toBe(true);
     expect(result.verifiedUserFacing).toBe(true);
     expect(result.userFacingText).toBe(result.text);
+    // Funds have moved and this text is the receipt for them. Ending the turn
+    // here is what makes it the reply verbatim; see the test below for the
+    // ordinary turn where the override alone would not have held.
+    expect(result.continueChain).toBe(false);
+  });
+
+  // The hazard the receipt halt exists to stop. Core's canonical override only
+  // outranks the evaluator when the turn has exactly one successful step, and a
+  // planner that priced the cash-out before submitting it has already spent
+  // that budget - so without the halt these identifiers reach the user only as
+  // whatever the model wrote about them. A unit test cannot run core's planner
+  // loop, so the second successful step is driven directly.
+  it("ends the turn on a cash-out receipt priced by an earlier successful step", async () => {
+    const { runtime, client } = createRuntimeWithService();
+    const parameters = { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" };
+    const call = (text: string) =>
+      run(peerCashCashoutAction, runtime, createTestMessage(text), parameters);
+
+    const estimate = await run(peerCashEstimateAction, runtime, createTestMessage("rate?"), {
+      amount: 100,
+      currency: "USD",
+    });
+    await call("cash out 100 USDC to @alice on venmo");
+    const receipt = await call("yes");
+
+    expect(estimate.success).toBe(true);
+    expect(receipt.continueChain).toBe(false);
+    // The keys that reach an order already holding the user's USDC.
+    expect(receipt.userFacingText).toContain(cashoutResultFixture.depositId);
+    expect(receipt.userFacingText).toContain(cashoutResultFixture.txHash);
+    expect(client.cashout).toHaveBeenCalledTimes(1);
   });
 
   // Derived from the plugin's own registration, so a new verb that skips the
