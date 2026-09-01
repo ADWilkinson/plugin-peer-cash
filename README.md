@@ -64,6 +64,7 @@ Hosts that keep custody elsewhere (AA bundlers, policy engines, human approval s
 - Every funds-moving action requires a fresh user confirmation turn. The prompt ends the turn, so no later planner step can answer it on the user's behalf, and LLM-supplied flags cannot bypass the gate.
 - The receipt ends the turn too. A cash-out, withdrawal, or top-up reply reaches the user verbatim, so the deposit id and transaction hashes for funds that have already moved are never a model paraphrase of them.
 - Errors are typed. Every failure surfaces the SDK's error code, whether it is retryable, and the remediation sentence, including recovery evidence for uncertain transaction states.
+- A funds-moving submission that fails ends the turn as well. Its confirmation was spent when it ran, so nothing may re-plan it against that same approval. The failures that mean funds already moved are not retryable and say so, and the halt is what makes that binding rather than advisory.
 - Venmo, Cash App, and PayPal orders attach an access policy transaction after the deposit confirms. The plugin reports its hash, and a policy failure surfaces the recovery data instead of retrying blind.
 - Wise and PayPal need a Peer identity attestation for new payee registrations, which first-party Peer web obtains through the Peer TEE browser extension. Already registered handles work directly. `PEER_CASH_CAPABILITIES` flags these platforms.
 

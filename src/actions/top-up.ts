@@ -16,7 +16,7 @@ import type {
   State,
 } from "@elizaos/core";
 import { formatUsdc, topUpResultToJson } from "@zkp2p/cash";
-import { cashFailureResult } from "../errors.js";
+import { cashFailureResult, submitConfirmed } from "../errors.js";
 import { gatePeerCashExecution, peerCashGateActionResult } from "../security/confirmation.js";
 import { getPeerCashService } from "../service.js";
 import { actionParams, requireDepositIdParam, requireUsdcAmountParam } from "./params.js";
@@ -87,9 +87,10 @@ export const peerCashTopUpAction: Action = {
         return peerCashGateActionResult(gate);
       }
 
-      const result = await service
-        .getClient()
-        .topUp(depositId, amount, { signer: signer.walletClient });
+      // The confirmation is spent; a failure past this point ends the turn.
+      const result = await submitConfirmed(() =>
+        service.getClient().topUp(depositId, amount, { signer: signer.walletClient }),
+      );
 
       const text =
         `Added ${formatUsdc(amount)} USDC to order ${result.depositId}. ` +
