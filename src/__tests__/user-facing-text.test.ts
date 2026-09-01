@@ -12,12 +12,21 @@
  * turn's last word - a second successful step in the same turn is enough to
  * spend the single-step budget the override needs. A funds-moving submission
  * that *failed* needs the halt for a second reason: the confirmation that
- * authorized it is already spent, so planning on can submit it again. This
- * suite fails when any verb drops either; the coverage test below keeps the
- * case lists equal to the plugin's own registration.
+ * authorized it is already spent, so planning on can submit it again. Neither
+ * lever survives a reply the handler never returns, so a settled funds-moving
+ * verb must also hold its result when rendering or delivering that text
+ * throws. This suite fails when any verb drops any of them; the coverage test
+ * below keeps the case lists equal to the plugin's own registration.
  */
 
-import type { Action, ActionResult, IAgentRuntime, JsonValue, Memory } from "@elizaos/core";
+import type {
+  Action,
+  ActionResult,
+  HandlerCallback,
+  IAgentRuntime,
+  JsonValue,
+  Memory,
+} from "@elizaos/core";
 import { CashError } from "@zkp2p/cash";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -34,6 +43,7 @@ import {
   cashoutResultFixture,
   createMockCashClient,
   createMockRuntime,
+  createOrderFixture,
   createRuntimeWithService,
   createTestMessage,
   emptyState,
@@ -45,13 +55,14 @@ async function run(
   runtime: IAgentRuntime,
   message: Memory,
   parameters: Record<string, JsonValue>,
+  callback?: HandlerCallback,
 ): Promise<ActionResult> {
   return (await action.handler(
     runtime,
     message,
     emptyState,
     { parameters },
-    undefined,
+    callback,
     [],
   )) as ActionResult;
 }
@@ -391,5 +402,107 @@ describe("canonical failure text", () => {
     expect(result.text).toContain("ORACLE_READ_FAILED");
     expect(result.text).toContain("Retry the read through a healthy Base RPC.");
     expect(result.userFacingText).toBe(result.text);
+  });
+});
+
+describe("settled funds-moving replies survive their own reporting", () => {
+  // Past the gate the operation has settled and the reply is the receipt for
+  // it. A host callback is a network transport - an outage, a rate limit, a
+  // rejected message - so it throws, and the handler's catch block emits
+  // through that same callback. The throw therefore escapes the handler
+  // itself: the verb returns no `ActionResult` at all, so the deposit id and
+  // transaction hashes are lost, `continueChain: false` never reaches core,
+  // and - with no successful step recorded for the verb - the planner is free
+  // to submit the whole operation again against the user's still-current
+  // "yes".
+  const brokenTransport: HandlerCallback = async () => {
+    throw new Error("host transport unavailable (503)");
+  };
+
+  const settledCases: Array<[Action, keyof MockCashClient, Record<string, JsonValue>]> = [
+    [
+      peerCashCashoutAction,
+      "cashout",
+      { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" },
+    ],
+    [peerCashWithdrawAction, "withdraw", { depositId: "base_412" }],
+    [peerCashTopUpAction, "topUp", { depositId: "base_412", amount: 50 }],
+  ];
+
+  it.each(settledCases)(
+    "$name keeps its receipt when the host callback throws",
+    async (action, method, parameters) => {
+      const { runtime, client } = createRuntimeWithService();
+      await run(action, runtime, createTestMessage("do it"), parameters);
+      const result = await run(
+        action,
+        runtime,
+        createTestMessage("yes"),
+        parameters,
+        brokenTransport,
+      );
+
+      expect(client[method]).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      // The text the emit could not deliver still reaches the user through
+      // core's final-message path, and still ends the turn.
+      expect(result.userFacingText).toBe(result.text);
+      expect(result.userFacingText).toContain("base_412");
+      expect(result.continueChain).toBe(false);
+    },
+  );
+
+  it.each(settledCases)(
+    "$name keeps its failure text when the host callback throws",
+    async (action, method, parameters) => {
+      const client = createMockCashClient({
+        [method]: vi.fn(async () => {
+          throw new CashError({
+            code: "TRANSACTION_STATUS_UNKNOWN",
+            message: "The transaction was submitted but its outcome could not be read.",
+            retryable: false,
+            remediation: "Inspect the transaction before submitting anything else.",
+          });
+        }),
+      });
+      const { runtime } = createRuntimeWithService({ client });
+      await run(action, runtime, createTestMessage("do it"), parameters);
+      const result = await run(
+        action,
+        runtime,
+        createTestMessage("yes"),
+        parameters,
+        brokenTransport,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.text).toContain("TRANSACTION_STATUS_UNKNOWN");
+      expect(result.userFacingText).toBe(result.text);
+      // The halt #17 added is only binding if the result is returned at all.
+      expect(result.continueChain).toBe(false);
+    },
+  );
+
+  // The order summary is the one part of a cash-out receipt that reaches back
+  // into an SDK result object, so it is the one part that can throw. Losing
+  // it is survivable; losing the deposit id printed beside it is not.
+  it("reports the short cash-out receipt when the order summary cannot render", async () => {
+    const client = createMockCashClient({
+      cashout: vi.fn(async () => ({
+        ...cashoutResultFixture,
+        order: createOrderFixture({
+          explain: () => {
+            throw new TypeError("explain is not a function");
+          },
+        }),
+      })),
+    });
+    const parameters = { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" };
+    const result = await runConfirmed(peerCashCashoutAction, parameters, client);
+
+    expect(result.success).toBe(true);
+    expect(result.userFacingText).toContain(cashoutResultFixture.depositId);
+    expect(result.userFacingText).toContain(cashoutResultFixture.txHash);
+    expect(result.continueChain).toBe(false);
   });
 });

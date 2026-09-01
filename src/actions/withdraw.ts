@@ -26,6 +26,7 @@ import {
   requireUsdcAmountParam,
   stringParam,
 } from "./params.js";
+import { emitSettled } from "./receipt.js";
 import { serviceUnavailableResult } from "./unavailable.js";
 
 export const peerCashWithdrawAction: Action = {
@@ -118,13 +119,8 @@ export const peerCashWithdrawAction: Action = {
       }
       const text = lines.join(" ");
 
-      if (callback) {
-        await callback({
-          text,
-          actions: ["PEER_CASH_WITHDRAW"],
-          source: message.content.source,
-        });
-      }
+      // The withdrawal has settled; delivering its receipt may not fail the turn.
+      await emitSettled({ actionName: "PEER_CASH_WITHDRAW", message, text, callback });
 
       return {
         success: true,
@@ -147,13 +143,12 @@ export const peerCashWithdrawAction: Action = {
       };
     } catch (error) {
       const failure = cashFailureResult(error, "Withdrawal");
-      if (callback) {
-        await callback({
-          text: failure.text ?? "Withdrawal failed.",
-          actions: ["PEER_CASH_WITHDRAW"],
-          source: message.content.source,
-        });
-      }
+      await emitSettled({
+        actionName: "PEER_CASH_WITHDRAW",
+        message,
+        text: failure.text ?? "Withdrawal failed.",
+        callback,
+      });
       return failure;
     }
   },

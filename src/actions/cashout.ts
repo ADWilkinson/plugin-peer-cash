@@ -27,6 +27,7 @@ import { gatePeerCashExecution, peerCashGateActionResult } from "../security/con
 import { getPeerCashService } from "../service.js";
 import { resolveCurrency, resolvePlatform } from "./catalog.js";
 import { actionParams, requireStringParam, requireUsdcAmountParam } from "./params.js";
+import { composeReceipt, emitSettled } from "./receipt.js";
 import { serviceUnavailableResult } from "./unavailable.js";
 
 /**
@@ -162,6 +163,7 @@ export const peerCashCashoutAction: Action = {
         ),
       );
 
+      // The deposit exists from here on, so nothing below may fail the turn.
       const lines = [
         `Cash-out submitted: ${formatUsdc(amount)} USDC to ${payee} on ${platform.platform} ` +
           `in ${currency}.`,
@@ -171,16 +173,15 @@ export const peerCashCashoutAction: Action = {
       if (result.accessPolicyTxHash) {
         lines.push(`Access policy confirmed: ${result.accessPolicyTxHash}.`);
       }
-      lines.push(formatOrderText(result.order));
-      const text = lines.join(" ");
+      // Only the order summary reaches back into the SDK result object; the
+      // ids above are already read, so they survive a summary that cannot be
+      // rendered.
+      const text = composeReceipt(
+        () => [...lines, formatOrderText(result.order)].join(" "),
+        lines.join(" "),
+      );
 
-      if (callback) {
-        await callback({
-          text,
-          actions: ["PEER_CASH_CASHOUT"],
-          source: message.content.source,
-        });
-      }
+      await emitSettled({ actionName: "PEER_CASH_CASHOUT", message, text, callback });
 
       return {
         success: true,
@@ -209,13 +210,12 @@ export const peerCashCashoutAction: Action = {
       };
     } catch (error) {
       const failure = cashFailureResult(error, "Cash-out");
-      if (callback) {
-        await callback({
-          text: failure.text ?? "Cash-out failed.",
-          actions: ["PEER_CASH_CASHOUT"],
-          source: message.content.source,
-        });
-      }
+      await emitSettled({
+        actionName: "PEER_CASH_CASHOUT",
+        message,
+        text: failure.text ?? "Cash-out failed.",
+        callback,
+      });
       return failure;
     }
   },
