@@ -20,6 +20,7 @@ import { cashFailureResult, submitConfirmed } from "../errors.js";
 import { gatePeerCashExecution, peerCashGateActionResult } from "../security/confirmation.js";
 import { getPeerCashService } from "../service.js";
 import { actionParams, requireDepositIdParam, requireUsdcAmountParam } from "./params.js";
+import { emitSettled } from "./receipt.js";
 import { serviceUnavailableResult } from "./unavailable.js";
 
 export const peerCashTopUpAction: Action = {
@@ -96,13 +97,8 @@ export const peerCashTopUpAction: Action = {
         `Added ${formatUsdc(amount)} USDC to order ${result.depositId}. ` +
         `Transaction: ${result.txHash}.`;
 
-      if (callback) {
-        await callback({
-          text,
-          actions: ["PEER_CASH_TOP_UP"],
-          source: message.content.source,
-        });
-      }
+      // The top-up has settled; delivering its receipt may not fail the turn.
+      await emitSettled({ actionName: "PEER_CASH_TOP_UP", message, text, callback });
 
       return {
         success: true,
@@ -121,13 +117,12 @@ export const peerCashTopUpAction: Action = {
       };
     } catch (error) {
       const failure = cashFailureResult(error, "Top-up");
-      if (callback) {
-        await callback({
-          text: failure.text ?? "Top-up failed.",
-          actions: ["PEER_CASH_TOP_UP"],
-          source: message.content.source,
-        });
-      }
+      await emitSettled({
+        actionName: "PEER_CASH_TOP_UP",
+        message,
+        text: failure.text ?? "Top-up failed.",
+        callback,
+      });
       return failure;
     }
   },
