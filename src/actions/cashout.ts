@@ -21,7 +21,7 @@ import type {
 } from "@elizaos/core";
 import { logger } from "@elizaos/core";
 import { type CashClient, type CurrencyType, cashoutResultToJson, formatUsdc } from "@zkp2p/cash";
-import { cashFailureResult } from "../errors.js";
+import { cashFailureResult, submitConfirmed } from "../errors.js";
 import { formatOrderText } from "../format.js";
 import { gatePeerCashExecution, peerCashGateActionResult } from "../security/confirmation.js";
 import { getPeerCashService } from "../service.js";
@@ -150,12 +150,16 @@ export const peerCashCashoutAction: Action = {
         return peerCashGateActionResult(gate);
       }
 
-      const result = await client.cashout(
-        {
-          amount,
-          receive: { platform: platform.platform, currency, payee },
-        },
-        { signer: signer.walletClient },
+      // Past the gate the confirmation is spent, so a failure here must end
+      // the turn rather than let a re-plan buy the same order twice.
+      const result = await submitConfirmed(() =>
+        client.cashout(
+          {
+            amount,
+            receive: { platform: platform.platform, currency, payee },
+          },
+          { signer: signer.walletClient },
+        ),
       );
 
       const lines = [

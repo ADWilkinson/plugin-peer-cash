@@ -10,9 +10,11 @@
  * model's paraphrase of those numbers, and without `continueChain: false`
  * neither the confirmation prompt nor the receipt that follows it is even the
  * turn's last word - a second successful step in the same turn is enough to
- * spend the single-step budget the override needs. This suite fails when any
- * verb drops either; the coverage test below keeps the case lists equal to the
- * plugin's own registration.
+ * spend the single-step budget the override needs. A funds-moving submission
+ * that *failed* needs the halt for a second reason: the confirmation that
+ * authorized it is already spent, so planning on can submit it again. This
+ * suite fails when any verb drops either; the coverage test below keeps the
+ * case lists equal to the plugin's own registration.
  */
 
 import type { Action, ActionResult, IAgentRuntime, JsonValue, Memory } from "@elizaos/core";
@@ -35,6 +37,7 @@ import {
   createRuntimeWithService,
   createTestMessage,
   emptyState,
+  type MockCashClient,
 } from "./test-utils.js";
 
 async function run(
@@ -57,8 +60,9 @@ async function run(
 async function runConfirmed(
   action: Action,
   parameters: Record<string, JsonValue>,
+  client?: MockCashClient,
 ): Promise<ActionResult> {
-  const { runtime } = createRuntimeWithService();
+  const { runtime } = createRuntimeWithService(client ? { client } : {});
   await run(action, runtime, createTestMessage("do it"), parameters);
   return run(action, runtime, createTestMessage("yes"), parameters);
 }
@@ -255,6 +259,116 @@ describe("canonical failure text", () => {
       expect(result.userFacingText).toBe(result.text);
     },
   );
+
+  // The SDK's own shape for a failure that already moved the funds: it names
+  // the deposit it created, is not retryable, and its remediation says not to
+  // create another cash-out. Prose the planner does not read; the halt is what
+  // enforces it.
+  const submissionFailure = () =>
+    new CashError({
+      code: "ACCESS_POLICY_CONFIGURATION_FAILED",
+      message:
+        "Cash-out deposit base_412 was created, but its access policy could not be confirmed.",
+      retryable: false,
+      remediation:
+        "Do not create another cash-out. Submit and confirm " +
+        "prepareAccessPolicy(recovery.depositId) with the same depositor wallet.",
+      recovery: {
+        kind: "configure-cashout-access-policy",
+        depositId: "base_412",
+        groupIds: ["group_1"],
+      },
+    });
+
+  const submitCases: Array<[Action, keyof MockCashClient, Record<string, JsonValue>]> = [
+    [
+      peerCashCashoutAction,
+      "cashout",
+      { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" },
+    ],
+    [peerCashWithdrawAction, "withdraw", { depositId: "base_412" }],
+    [peerCashTopUpAction, "topUp", { depositId: "base_412", amount: 50 }],
+  ];
+
+  it.each(submitCases)(
+    "$name ends the turn when its confirmed submission fails",
+    async (action, method, parameters) => {
+      const client = createMockCashClient({
+        [method]: vi.fn(async () => {
+          throw submissionFailure();
+        }),
+      });
+      const result = await runConfirmed(action, parameters, client);
+
+      expect(result.success).toBe(false);
+      expect(result.userFacingText).toBe(result.text);
+      expect(result.text).toContain("ACCESS_POLICY_CONFIGURATION_FAILED");
+      // The confirmation that authorized this call was consumed before it ran.
+      // Ending the turn is what stops the verb being planned again against it.
+      expect(result.continueChain).toBe(false);
+      expect(result.data?.recovery).toEqual({
+        kind: "configure-cashout-access-policy",
+        depositId: "base_412",
+        groupIds: ["group_1"],
+      });
+    },
+  );
+
+  // The hazard the submission halt exists to stop, driven directly because a
+  // unit test cannot run core's planner loop. Core skips only tool calls that
+  // *succeeded* with identical args this turn, so the failed one is re-planned:
+  // the first re-entry finds no pending record and arms a fresh one for the
+  // same terms, and the second tests core's confirm regex against the user's
+  // still-current "yes" and submits again - on top of a deposit the failure
+  // evidence says already exists.
+  it("resubmits a failed cash-out inside one turn if the failure plans on", async () => {
+    const client = createMockCashClient({
+      cashout: vi.fn(async () => {
+        throw submissionFailure();
+      }),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+    const parameters = { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" };
+    const call = (text: string) =>
+      run(peerCashCashoutAction, runtime, createTestMessage(text), parameters);
+
+    await call("cash out 100 USDC to @alice on venmo");
+    const failure = await call("yes");
+    const rearmed = await call("yes");
+    await call("yes");
+
+    expect(failure.continueChain).toBe(false);
+    // Both re-entries only happen at all if the halt above is dropped; their
+    // outcomes are why it is there.
+    expect(rearmed.data?.confirmationStatus).toBe("pending");
+    expect(client.cashout).toHaveBeenCalledTimes(2);
+  });
+
+  // Scope check: only the submission is terminal. A read verb has moved
+  // nothing, so the planner keeps the turn and can still recover it from a
+  // stale estimate or a lagging indexer, and the same is true of a write verb
+  // that failed before its gate ever released anything.
+  it.each(readCases)("$name leaves the turn open on a failure", async (action, parameters) => {
+    const client = createMockCashClient({
+      capabilities: vi.fn(() => {
+        throw new Error("indexer unavailable");
+      }),
+      estimate: vi.fn(async () => {
+        throw new Error("indexer unavailable");
+      }),
+      order: vi.fn(async () => {
+        throw new Error("indexer unavailable");
+      }),
+      orders: vi.fn(async () => {
+        throw new Error("indexer unavailable");
+      }),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+    const result = await run(action, runtime, createTestMessage("ask"), parameters);
+
+    expect(result.success).toBe(false);
+    expect(result.continueChain).not.toBe(false);
+  });
 
   it("marks a cash verb failure canonical with its code and remediation", async () => {
     const client = createMockCashClient({

@@ -17,7 +17,7 @@ import type {
   State,
 } from "@elizaos/core";
 import { formatUsdc, withdrawResultToJson } from "@zkp2p/cash";
-import { cashFailureResult } from "../errors.js";
+import { cashFailureResult, submitConfirmed } from "../errors.js";
 import { gatePeerCashExecution, peerCashGateActionResult } from "../security/confirmation.js";
 import { getPeerCashService } from "../service.js";
 import {
@@ -97,10 +97,13 @@ export const peerCashWithdrawAction: Action = {
         return peerCashGateActionResult(gate);
       }
 
-      const result = await service.getClient().withdraw(depositId, {
-        signer: signer.walletClient,
-        ...(partialAmount !== undefined ? { amount: partialAmount } : {}),
-      });
+      // The confirmation is spent; a failure past this point ends the turn.
+      const result = await submitConfirmed(() =>
+        service.getClient().withdraw(depositId, {
+          signer: signer.walletClient,
+          ...(partialAmount !== undefined ? { amount: partialAmount } : {}),
+        }),
+      );
 
       const scope =
         partialAmount === undefined
