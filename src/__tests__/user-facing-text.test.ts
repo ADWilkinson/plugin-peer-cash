@@ -13,10 +13,12 @@
  * spend the single-step budget the override needs. A funds-moving submission
  * that *failed* needs the halt for a second reason: the confirmation that
  * authorized it is already spent, so planning on can submit it again. Neither
- * lever survives a reply the handler never returns, so a settled funds-moving
- * verb must also hold its result when rendering or delivering that text
- * throws. This suite fails when any verb drops any of them; the coverage test
- * below keeps the case lists equal to the plugin's own registration.
+ * lever survives a reply the handler never returns, so a funds-moving verb
+ * must also hold its result when rendering or delivering that text throws -
+ * on the settled side, where the operation has already happened, and on the
+ * prompt side, where core arms the pending record before it tries to deliver.
+ * This suite fails when any verb drops any of them; the coverage test below
+ * keeps the case lists equal to the plugin's own registration.
  */
 
 import type {
@@ -505,4 +507,90 @@ describe("settled funds-moving replies survive their own reporting", () => {
     expect(result.userFacingText).toContain(cashoutResultFixture.txHash);
     expect(result.continueChain).toBe(false);
   });
+});
+
+describe("the confirmation prompt survives its own delivery", () => {
+  // Core arms the pending record and only then calls the callback, without
+  // guarding it. An unguarded throw there escapes `requireConfirmation`, past
+  // the gate check, into the action's catch block - which reports it as an
+  // ordinary pre-submission failure, and those deliberately keep planning on.
+  // So the record is live, the turn is still running, and the failed step is
+  // not one core deduplicates: the verb is planned again against the same
+  // user message, and this time the gate finds the record and tests core's
+  // confirm regex against the original request.
+  const brokenTransport: HandlerCallback = async () => {
+    throw new Error("host transport unavailable (503)");
+  };
+
+  /**
+   * What core's planner loop does with a step that did not halt: a handler
+   * that threw records no step at all, and one that returned without
+   * `continueChain: false` leaves the loop running. Either way the same call
+   * is planned again inside the same turn, against the same message.
+   */
+  async function driveTurn(
+    action: Action,
+    runtime: IAgentRuntime,
+    message: Memory,
+    parameters: Record<string, JsonValue>,
+    callback: HandlerCallback,
+  ): Promise<ActionResult[]> {
+    const replies: ActionResult[] = [];
+    for (let step = 0; step < 2; step++) {
+      let result: ActionResult;
+      try {
+        result = await run(action, runtime, message, parameters, callback);
+      } catch {
+        continue;
+      }
+      replies.push(result);
+      if (result.continueChain === false) break;
+    }
+    return replies;
+  }
+
+  const gatedCases: Array<[Action, keyof MockCashClient, Record<string, JsonValue>]> = [
+    [
+      peerCashCashoutAction,
+      "cashout",
+      { amount: 100, platform: "venmo", currency: "USD", payee: "@alice" },
+    ],
+    [peerCashWithdrawAction, "withdraw", { depositId: "base_412" }],
+    [peerCashTopUpAction, "topUp", { depositId: "base_412", amount: 50 }],
+  ];
+
+  it.each(gatedCases)(
+    "$name never submits on a turn whose prompt the host could not deliver",
+    async (action, method, parameters) => {
+      const { runtime, client } = createRuntimeWithService();
+      // A perfectly ordinary request that happens to open with a word core's
+      // confirm regex accepts. It is the request, not an approval of it.
+      const message = createTestMessage("ok, cash that out for me now");
+
+      const replies = await driveTurn(action, runtime, message, parameters, brokenTransport);
+
+      expect(client[method]).not.toHaveBeenCalled();
+      expect(replies).toHaveLength(1);
+      const prompt = replies[0] as ActionResult;
+      expect(prompt.data?.confirmationStatus).toBe("pending");
+      // The undelivered prompt is still the turn's last word, and still
+      // reaches the user verbatim through core's final-message path.
+      expect(prompt.continueChain).toBe(false);
+      expect(prompt.userFacingText).toBe(prompt.text);
+      expect(prompt.userFacingText).toContain("Reply yes to submit or no to cancel");
+    },
+  );
+
+  it.each(gatedCases)(
+    "$name still honours the next turn's yes after an undelivered prompt",
+    async (action, method, parameters) => {
+      const { runtime, client } = createRuntimeWithService();
+      await run(action, runtime, createTestMessage("cash that out"), parameters, brokenTransport);
+
+      const result = await run(action, runtime, createTestMessage("yes"), parameters);
+
+      expect(client[method]).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+    },
+  );
 });

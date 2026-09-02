@@ -15,7 +15,7 @@ import type {
   IAgentRuntime,
   Memory,
 } from "@elizaos/core";
-import { requireConfirmation } from "@elizaos/core";
+import { logger, requireConfirmation } from "@elizaos/core";
 import { formatUsdc } from "@zkp2p/cash";
 
 /** Cache namespace for Peer Cash funds-moving confirmations. */
@@ -77,6 +77,48 @@ export function peerCashPreview(params: PeerCashWriteParams): string {
   }
 }
 
+/**
+ * Deliver the confirmation prompt without letting the transport decide the
+ * gate's outcome. Core arms the pending record *before* it calls this
+ * callback and does not guard the call, so a host that is down,
+ * rate-limited, or rejecting the message rejects out of
+ * `requireConfirmation` with the record already live. That rejection lands in
+ * the action's own catch block as an ordinary pre-submission failure, which
+ * carries no `continueChain: false` - so core's planner loop runs on, and a
+ * step that did not succeed is not one it deduplicates. The re-plan re-enters
+ * this gate, consumes the record armed a moment ago, and tests core's confirm
+ * regex against the *original request*; that regex is anchored at the start
+ * and accepts "ok", "sure", "do it", "go ahead", "yes". A request opening
+ * with any of them submits the funds on a turn whose prompt the user never
+ * received - strictly worse than the self-approval the halt on the pending
+ * result already closes, because there the user at least saw the terms.
+ *
+ * Swallowing the delivery failure keeps the decision `pending`, which halts
+ * the turn on the preview and carries that same text to the user through
+ * core's final-message path: the treatment every other reply on this path
+ * already gets.
+ */
+function deliverPrompt(
+  callback: HandlerCallback,
+  operation: PeerCashWriteOperation,
+): HandlerCallback {
+  // error-policy:J4 user-facing degrade - the prompt is delivery, and the
+  // pending record it announces is armed whether or not it arrives.
+  return async (content, actionName) => {
+    try {
+      return await callback(content, actionName);
+    } catch (error) {
+      logger.warn(
+        `[plugin-peer-cash] ${operation} confirmation prompt could not be delivered through ` +
+          `the host callback; the turn halts on the same text: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+      );
+      return [];
+    }
+  };
+}
+
 export type PeerCashGateResult =
   | { readonly proceed: true }
   | {
@@ -108,7 +150,7 @@ export async function gatePeerCashExecution(args: {
     actionName: PEER_CASH_CONFIRM_ACTION,
     pendingKey: peerCashPendingKey(args.params),
     prompt: preview,
-    callback: args.callback,
+    callback: args.callback ? deliverPrompt(args.callback, args.params.operation) : undefined,
     metadata: { operation: args.params.operation },
   });
 
