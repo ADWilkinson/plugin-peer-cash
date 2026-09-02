@@ -7,6 +7,7 @@
  */
 
 import type { IAgentRuntime } from "@elizaos/core";
+import { privateKeyToAccount } from "viem/accounts";
 import { z } from "zod";
 
 export const PEER_CASH_ENVIRONMENTS = ["production", "preproduction", "staging"] as const;
@@ -91,6 +92,26 @@ const peerCashConfigSchema = z.object({
         ctx.addIssue({
           code: "custom",
           message: "EVM_PRIVATE_KEY must be a 0x-prefixed 32-byte hex private key",
+        });
+        return z.NEVER;
+      }
+      // Thirty-two hex bytes is a shape, not a key: secp256k1 only accepts a
+      // scalar in [1, n). A placeholder of zeros, a truncated value re-padded
+      // to width, or a hash pasted into the slot all clear the pattern and
+      // then throw inside `privateKeyToAccount` - long past this boundary,
+      // which exists so a malformed setting fails the load rather than
+      // degrading silently. Deriving the account here is the same operation
+      // the signer performs later, so nothing downstream can disagree with
+      // the verdict, and it needs no local copy of the curve order to drift.
+      try {
+        privateKeyToAccount(trimmed as `0x${string}`);
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "EVM_PRIVATE_KEY is 32 hex bytes but not a usable secp256k1 signing key (it must " +
+            "be a scalar between 1 and the curve order). Check the key was copied whole and " +
+            "is not a placeholder.",
         });
         return z.NEVER;
       }

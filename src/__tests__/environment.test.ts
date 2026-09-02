@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PEER_CASH_SETTING_KEYS, resolvePeerCashConfig } from "../environment.js";
-import { createMockRuntime } from "./test-utils.js";
+import { createMockRuntime, TEST_PRIVATE_KEY } from "./test-utils.js";
 
 const savedEnv = new Map<string, string | undefined>();
 
@@ -86,6 +86,52 @@ describe("resolvePeerCashConfig", () => {
         }),
       ),
     ).toThrow(/PEER_CASH_RPC_URL must be a valid URL.*EVM_PRIVATE_KEY must be a 0x-prefixed/s);
+  });
+
+  it("accepts a well-formed private key", () => {
+    const config = resolvePeerCashConfig(
+      createMockRuntime({ settings: { EVM_PRIVATE_KEY: ` ${TEST_PRIVATE_KEY} ` } }),
+    );
+    expect(config.evmPrivateKey).toBe(TEST_PRIVATE_KEY);
+  });
+
+  // Shape is not validity: secp256k1 takes a scalar in [1, n), so each of
+  // these clears EVM_PRIVATE_KEY_PATTERN and then throws inside
+  // `privateKeyToAccount`. Accepting one here defers the failure past the
+  // boundary that exists to catch it - core swallows the throw from
+  // PEER_CASH_STATUS, so the provider silently vanishes from planner context,
+  // and the first cash-out fails with a raw curve-order message that names
+  // neither the setting nor the fix.
+  it("rejects 32 hex bytes that are not a usable secp256k1 key", () => {
+    for (const key of [
+      `0x${"0".repeat(64)}`,
+      "0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      `0x${"f".repeat(64)}`,
+    ]) {
+      expect(() =>
+        resolvePeerCashConfig(createMockRuntime({ settings: { EVM_PRIVATE_KEY: key } })),
+      ).toThrow(/EVM_PRIVATE_KEY is 32 hex bytes but not a usable secp256k1 signing key/);
+    }
+  });
+
+  // The two rejections must not collapse into one message: telling an
+  // operator whose key is exactly 32 hex bytes that it "must be a 0x-prefixed
+  // 32-byte hex private key" sends them to check the one thing that is right.
+  it("keeps the shape and the validity rejections distinct", () => {
+    expect(() =>
+      resolvePeerCashConfig(createMockRuntime({ settings: { EVM_PRIVATE_KEY: "0x1234" } })),
+    ).toThrow(/EVM_PRIVATE_KEY must be a 0x-prefixed 32-byte hex private key/);
+
+    let message = "";
+    try {
+      resolvePeerCashConfig(
+        createMockRuntime({ settings: { EVM_PRIVATE_KEY: `0x${"0".repeat(64)}` } }),
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/not a usable secp256k1 signing key/);
+    expect(message).not.toMatch(/must be a 0x-prefixed 32-byte hex private key/);
   });
 
   it("falls back to process.env when the runtime setting is absent", () => {
