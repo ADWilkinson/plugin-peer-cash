@@ -8,12 +8,14 @@ import { CashError, usdc } from "@zkp2p/cash";
 import { describe, expect, it, vi } from "vitest";
 import { peerCashEstimateAction } from "../actions/estimate.js";
 import {
+  capabilitiesFixture,
   createCallbackSpy,
   createMockCashClient,
   createMockRuntime,
   createRuntimeWithService,
   createTestMessage,
   emptyState,
+  estimateFixture,
 } from "./test-utils.js";
 
 const message = () => createTestMessage("How much EUR for 1000 USDC?");
@@ -83,6 +85,36 @@ describe("PEER_CASH_ESTIMATE", () => {
     expect(result?.text).toContain("retryable");
     expect(result?.data?.error).toBe("ORACLE_READ_FAILED");
     expect(result?.data?.retryable).toBe(true);
+  });
+
+  it("does not tell the user a creation-bound estimate resolves at fill", async () => {
+    const client = createMockCashClient({
+      capabilities: vi.fn(() => ({
+        ...capabilitiesFixture,
+        currencies: [...capabilitiesFixture.currencies, "CNY"],
+      })),
+      estimate: vi.fn(async () => ({
+        ...estimateFixture,
+        currency: "CNY",
+        binding: "deposit-creation" as const,
+        receiveAmount: 7200,
+        rate: 7.2,
+      })),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+
+    const result = await peerCashEstimateAction.handler(
+      runtime,
+      createTestMessage("How much CNY for 1000 USDC?"),
+      emptyState,
+      { parameters: { amount: 1000, currency: "CNY" } },
+      undefined,
+    );
+
+    expect(result?.success).toBe(true);
+    expect(result?.text).toContain("binds when the deposit is created");
+    expect(result?.text).toContain("not a locked quote");
+    expect(result?.text).not.toContain("when a buyer fills");
   });
 
   it("fails clearly when the amount is missing or invalid", async () => {

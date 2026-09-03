@@ -4,9 +4,9 @@
  * two-phase confirmation gate first - the preview shows amount, platform,
  * currency, payee, and the current oracle estimate, and only a yes reply on a
  * later turn submits. The returned `depositId` is the resume key; hosts
- * should persist it. Venmo, Cash App, and PayPal orders confirm an
- * access-policy transaction after the deposit; its hash is reported when
- * present.
+ * should persist it. Venmo and PayPal orders confirm method-scoped Peer Pay
+ * access-policy transactions after the deposit; every confirmed hash is
+ * reported. Cash App stays public and does not take a policy follow-up.
  */
 
 import type {
@@ -44,10 +44,17 @@ async function estimatePreviewSuffix(
   // the confirmation prompt, never a binding term of the confirmed operation.
   try {
     const estimate = await client.estimate({ amount, currency }, { includeEta: false });
-    return `Current oracle estimate: about ${estimate.receiveAmount.toLocaleString("en-US", {
+    const receive = estimate.receiveAmount.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    })} ${estimate.currency} (not a locked rate).`;
+    });
+    if (estimate.binding === "deposit-creation") {
+      return (
+        `Current Chainlink snapshot: about ${receive} ${estimate.currency} (binds when the ` +
+        "deposit is created, not a locked rate)."
+      );
+    }
+    return `Current oracle estimate: about ${receive} ${estimate.currency} (not a locked rate).`;
   } catch (error) {
     logger.debug(
       `[plugin-peer-cash] estimate unavailable for cash-out preview: ${
@@ -170,8 +177,15 @@ export const peerCashCashoutAction: Action = {
         `Deposit id (save this to track or manage the order): ${result.depositId}.`,
         `Transaction: ${result.txHash}.`,
       ];
-      if (result.accessPolicyTxHash) {
-        lines.push(`Access policy confirmed: ${result.accessPolicyTxHash}.`);
+      const policyHashes = result.accessPolicyTxHashes?.length
+        ? result.accessPolicyTxHashes
+        : result.accessPolicyTxHash
+          ? [result.accessPolicyTxHash]
+          : [];
+      if (policyHashes.length === 1) {
+        lines.push(`Access policy confirmed: ${policyHashes[0]}.`);
+      } else if (policyHashes.length > 1) {
+        lines.push(`Access policies confirmed: ${policyHashes.join(", ")}.`);
       }
       // Only the order summary reaches back into the SDK result object; the
       // ids above are already read, so they survive a summary that cannot be
@@ -229,7 +243,7 @@ export const peerCashCashoutAction: Action = {
       {
         name: "{{agentName}}",
         content: {
-          text: "Cash out 100 USDC to @alice on venmo in USD at the live oracle market rate (0% spread, rate resolves when a buyer fills)? Reply yes to submit or no to cancel.",
+          text: "Cash out 100 USDC to @alice on venmo in USD at the live Chainlink market rate (0% spread)? Reply yes to submit or no to cancel.",
           actions: ["PEER_CASH_CASHOUT"],
         },
       },
