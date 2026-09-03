@@ -9,6 +9,7 @@ import { CashError, usdc } from "@zkp2p/cash";
 import { describe, expect, it, vi } from "vitest";
 import { peerCashCashoutAction } from "../actions/cashout.js";
 import {
+  cashoutResultFixture,
   createCallbackSpy,
   createMockCashClient,
   createRuntimeWithService,
@@ -184,5 +185,66 @@ describe("PEER_CASH_CASHOUT", () => {
     expect(client.cashout).not.toHaveBeenCalled();
     expect(result?.success).toBe(false);
     expect(result?.text).toContain('platform "paypal-invalid" is not supported');
+  });
+
+  it("reports every confirmed access-policy hash", async () => {
+    const hashes = [
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    ] as const;
+    const client = createMockCashClient({
+      cashout: vi.fn(async () => ({
+        ...cashoutResultFixture,
+        accessPolicyTxHashes: [...hashes],
+      })),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+
+    await peerCashCashoutAction.handler(
+      runtime,
+      createTestMessage("Cash out 100 USDC to @alice on venmo"),
+      emptyState,
+      { parameters: params },
+      undefined,
+    );
+    const result = await peerCashCashoutAction.handler(
+      runtime,
+      createTestMessage("yes"),
+      emptyState,
+      { parameters: params },
+      undefined,
+    );
+
+    expect(result?.success).toBe(true);
+    expect(result?.text).toContain(`Access policies confirmed: ${hashes[0]}, ${hashes[1]}.`);
+  });
+
+  it("reports a single access-policy hash from the compatibility field", async () => {
+    const hash = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const client = createMockCashClient({
+      cashout: vi.fn(async () => ({
+        ...cashoutResultFixture,
+        accessPolicyTxHash: hash,
+      })),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+
+    await peerCashCashoutAction.handler(
+      runtime,
+      createTestMessage("Cash out 100 USDC to @alice on venmo"),
+      emptyState,
+      { parameters: params },
+      undefined,
+    );
+    const result = await peerCashCashoutAction.handler(
+      runtime,
+      createTestMessage("yes"),
+      emptyState,
+      { parameters: params },
+      undefined,
+    );
+
+    expect(result?.success).toBe(true);
+    expect(result?.text).toContain(`Access policy confirmed: ${hash}.`);
   });
 });

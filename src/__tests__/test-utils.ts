@@ -21,9 +21,12 @@ import {
 import type {
   CashCapabilities,
   CashClient,
+  CashCorridorPricing,
   CashEstimate,
   CashOrder,
   CashoutResult,
+  CashPlatformCapability,
+  CurrencyType,
   TopUpResult,
   WithdrawResult,
 } from "@zkp2p/cash";
@@ -110,6 +113,17 @@ export function createCallbackSpy(): {
   return { callback, calls };
 }
 
+const INTENT_SIGNAL_PRICING: CashCorridorPricing = {
+  kind: "oracle-at-intent-signal",
+  spreadBps: 0,
+};
+
+function intentSignalPricing(
+  currencies: readonly CurrencyType[],
+): CashPlatformCapability["pricing"] {
+  return Object.fromEntries(currencies.map((currency) => [currency, INTENT_SIGNAL_PRICING]));
+}
+
 export const capabilitiesFixture: CashCapabilities = {
   chainId: 8453,
   token: {
@@ -140,6 +154,7 @@ export const capabilitiesFixture: CashCapabilities = {
     {
       platform: "venmo",
       currencies: ["USD"],
+      pricing: intentSignalPricing(["USD"]),
       payeeHint: "Your Venmo username, like @alice",
       requiresIdentityAttestation: false,
       requiresAtomicAccessPolicy: false,
@@ -147,6 +162,7 @@ export const capabilitiesFixture: CashCapabilities = {
     {
       platform: "revolut",
       currencies: ["EUR", "GBP", "USD"],
+      pricing: intentSignalPricing(["EUR", "GBP", "USD"]),
       payeeHint: "Your Revolut revtag",
       requiresIdentityAttestation: false,
       requiresAtomicAccessPolicy: false,
@@ -154,6 +170,7 @@ export const capabilitiesFixture: CashCapabilities = {
     {
       platform: "wise",
       currencies: ["EUR", "GBP", "USD"],
+      pricing: intentSignalPricing(["EUR", "GBP", "USD"]),
       payeeHint: "Your Wise email or wisetag",
       requiresIdentityAttestation: true,
       requiresAtomicAccessPolicy: false,

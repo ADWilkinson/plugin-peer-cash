@@ -4,10 +4,11 @@
  * fail-open path when fill stats are unavailable, and the stats opt-out.
  */
 
-import { CashError } from "@zkp2p/cash";
+import { CashError, createCashClient } from "@zkp2p/cash";
 import { describe, expect, it, vi } from "vitest";
 import { peerCashCapabilitiesAction } from "../actions/capabilities.js";
 import {
+  capabilitiesFixture,
   createCallbackSpy,
   createMockCashClient,
   createRuntimeWithService,
@@ -105,5 +106,64 @@ describe("PEER_CASH_CAPABILITIES", () => {
 
     expect(result?.success).toBe(true);
     expect(client.fillStats).not.toHaveBeenCalled();
+  });
+
+  it("names corridors that bind when the deposit is created", async () => {
+    const client = createMockCashClient({
+      capabilities: vi.fn(() => ({
+        ...capabilitiesFixture,
+        currencies: [...capabilitiesFixture.currencies, "CNY"],
+        platforms: [
+          ...capabilitiesFixture.platforms,
+          {
+            platform: "alipay",
+            currencies: ["CNY"],
+            pricing: {
+              CNY: {
+                kind: "fixed-at-deposit-creation",
+                source: "chainlink-ethereum",
+                spreadBps: 0,
+              },
+            },
+            payeeHint: "Email address linked to your Alipay account",
+            requiresIdentityAttestation: true,
+            requiresAtomicAccessPolicy: false,
+          },
+        ],
+      })),
+    });
+    const { runtime } = createRuntimeWithService({ client });
+
+    const result = await peerCashCapabilitiesAction.handler(
+      runtime,
+      message(),
+      emptyState,
+      { parameters: { includeFillStats: false } },
+      undefined,
+    );
+
+    expect(result?.success).toBe(true);
+    expect(result?.text).toContain("bind when the deposit is created");
+    expect(result?.text).toContain("CNY binds when the deposit is created");
+    expect(result?.text).not.toContain("live oracle market rate with 0% spread");
+  });
+});
+
+describe("installed @zkp2p/cash catalog", () => {
+  it("exposes Alipay/CNY as a creation-bound corridor and leaves Cash App public", () => {
+    const caps = createCashClient({ environment: "production" }).capabilities();
+    const methods = ["capabilities", "estimate", "cashout", "order", "orders", "withdraw", "topUp"];
+    const client = createCashClient({ environment: "production" });
+    for (const method of methods) {
+      expect(typeof client[method as keyof typeof client]).toBe("function");
+    }
+
+    expect(
+      caps.platforms.find((platform) => platform.platform === "alipay")?.pricing.CNY?.kind,
+    ).toBe("fixed-at-deposit-creation");
+    expect(
+      caps.platforms.find((platform) => platform.platform === "venmo")?.pricing.USD?.kind,
+    ).toBe("oracle-at-intent-signal");
+    expect(caps.platforms.some((platform) => platform.platform === "cashapp")).toBe(true);
   });
 });

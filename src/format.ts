@@ -6,7 +6,13 @@
  * sentence plus its `nextActions` instead of local heuristics.
  */
 
-import type { CashCapabilities, CashEstimate, CashFillStats, CashOrder } from "@zkp2p/cash";
+import type {
+  CashCapabilities,
+  CashEstimate,
+  CashFillStats,
+  CashOrder,
+  CashPlatformCapability,
+} from "@zkp2p/cash";
 import { formatUsdc } from "@zkp2p/cash";
 
 /** Human-format a fiat number without artificial precision. */
@@ -16,11 +22,16 @@ function fiat(value: number): string {
 
 export function formatEstimateText(estimate: CashEstimate): string {
   const usdcAmount = formatUsdc(estimate.amount);
+  const bindingLine =
+    estimate.binding === "deposit-creation"
+      ? "This is a live Chainlink snapshot with 0% spread, not a locked quote; the rate binds " +
+        "when the deposit is created."
+      : "This is a live Chainlink oracle estimate with 0% spread, not a locked quote; the final " +
+        "rate resolves at the oracle when a buyer fills.";
   const lines = [
     `Estimated cash-out: about ${fiat(estimate.receiveAmount)} ${estimate.currency} for ` +
       `${usdcAmount} USDC at roughly ${estimate.rate.toFixed(4)} ${estimate.currency}/USDC.`,
-    "This is a live Chainlink oracle estimate with 0% spread, not a locked quote; the final " +
-      "rate resolves at the oracle when a buyer fills.",
+    bindingLine,
   ];
   if (estimate.eta?.label) {
     lines.push(`Typical time to first fill (30-day history): ${estimate.eta.label}.`);
@@ -72,14 +83,29 @@ function platformFills(fillStats: CashFillStats, platform: string): number {
     .reduce((sum, [, value]) => sum + value.fills, 0);
 }
 
+function creationBoundCurrencies(platform: CashPlatformCapability): string[] {
+  return Object.entries(platform.pricing ?? {})
+    .filter(([, pricing]) => pricing?.kind === "fixed-at-deposit-creation")
+    .map(([currency]) => currency);
+}
+
+function catalogHasCreationBoundCorridor(capabilities: CashCapabilities): boolean {
+  return capabilities.platforms.some((platform) => creationBoundCurrencies(platform).length > 0);
+}
+
 export function formatCapabilitiesText(
   capabilities: CashCapabilities,
   fillStats: CashFillStats | null,
   statsNote: string | null,
 ): string {
+  const rateLine = catalogHasCreationBoundCorridor(capabilities)
+    ? `Peer Cash (${capabilities.environment}) cashes out Base USDC to fiat at a zero-spread ` +
+      "Chainlink market rate. Most corridors bind when a buyer fills; corridors marked below " +
+      "bind when the deposit is created."
+    : `Peer Cash (${capabilities.environment}) cashes out Base USDC to fiat at the live oracle ` +
+      "market rate with 0% spread.";
   const lines: string[] = [
-    `Peer Cash (${capabilities.environment}) cashes out Base USDC to fiat at the live oracle ` +
-      "market rate with 0% spread.",
+    rateLine,
     `Minimum ${formatUsdc(capabilities.amount.min)} USDC ` +
       `(recommended at least ${formatUsdc(capabilities.amount.recommendedMin)} USDC), no maximum.`,
     "Payout platforms:",
@@ -88,11 +114,16 @@ export function formatCapabilitiesText(
     const attestation = platform.requiresIdentityAttestation
       ? " (new payees need a Peer identity attestation)"
       : "";
+    const creationBound = creationBoundCurrencies(platform);
+    const binding =
+      creationBound.length > 0
+        ? ` (${creationBound.join(", ")} binds when the deposit is created)`
+        : "";
     const stats = fillStats ? platformFills(fillStats, platform.platform) : null;
     const statsSuffix = stats !== null && stats > 0 ? ` [${stats} fills in the last 30 days]` : "";
     lines.push(
       `- ${platform.platform}: ${platform.currencies.join(", ")}; payee: ${platform.payeeHint}` +
-        `${attestation}${statsSuffix}`,
+        `${attestation}${binding}${statsSuffix}`,
     );
   }
   if (statsNote) lines.push(statsNote);

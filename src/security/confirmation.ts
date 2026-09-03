@@ -59,8 +59,8 @@ export function peerCashPreview(params: PeerCashWriteParams): string {
     case "cashout":
       return (
         `Cash out ${amount} to ${params.payee ?? "?"} on ${params.platform ?? "?"} in ` +
-        `${params.currency ?? "?"} at the live oracle market rate (0% spread, rate resolves ` +
-        "when a buyer fills)? Reply yes to submit or no to cancel."
+        `${params.currency ?? "?"} at the live Chainlink market rate (0% spread)? Reply yes ` +
+        "to submit or no to cancel."
       );
     case "withdraw": {
       const scope = params.amountBaseUnits === undefined ? "all remaining funds" : amount;

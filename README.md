@@ -6,7 +6,7 @@ Built on [@zkp2p/cash](https://www.npmjs.com/package/@zkp2p/cash), the offramp-o
 
 ## How it works
 
-The agent is the maker. Its USDC goes into a Peer protocol escrow contract as a deposit, a buyer pays the fiat to the agent's payee handle and proves the payment with a TEE attestation, and the protocol releases the USDC to the buyer. Pricing is the live Chainlink oracle rate at fill time with 0% spread. There is no quote engine and no centralized off-ramp provider in the middle.
+The agent is the maker. Its USDC goes into a Peer protocol escrow contract as a deposit, a buyer pays the fiat to the agent's payee handle and proves the payment with a TEE attestation, and the protocol releases the USDC to the buyer. Pricing is a zero-spread Chainlink market rate. Most corridors bind when a buyer fills; Alipay/CNY binds a fresh Ethereum Chainlink snapshot when the deposit is created. There is no quote engine and no centralized off-ramp provider in the middle.
 
 ## Actions
 
@@ -60,14 +60,14 @@ Hosts that keep custody elsewhere (AA bundlers, policy engines, human approval s
 ## Safety notes
 
 - Non-custodial. Funds sit in the Peer protocol escrow contract, and only the maker wallet can withdraw an unmatched deposit. There is no provider custody and no API key.
-- `PEER_CASH_ESTIMATE` is an oracle estimate, not a locked quote. The binding rate resolves at the Chainlink oracle when a buyer fills. The plugin never presents an estimate as a committed price.
+- `PEER_CASH_ESTIMATE` is an oracle estimate, not a locked quote. Most corridors bind at the Chainlink oracle when a buyer fills; Alipay/CNY binds when the deposit is created. The plugin never presents an estimate as a committed price.
 - Every funds-moving action requires a fresh user confirmation turn. The prompt ends the turn, so no later planner step can answer it on the user's behalf, and LLM-supplied flags cannot bypass the gate.
 - The receipt ends the turn too. A cash-out, withdrawal, or top-up reply reaches the user verbatim, so the deposit id and transaction hashes for funds that have already moved are never a model paraphrase of them.
 - Errors are typed. Every failure surfaces the SDK's error code, whether it is retryable, and the remediation sentence, including recovery evidence for uncertain transaction states.
 - A funds-moving submission that fails ends the turn as well. Its confirmation was spent when it ran, so nothing may re-plan it against that same approval. The failures that mean funds already moved are not retryable and say so, and the halt is what makes that binding rather than advisory.
 - Neither halt can be dropped by the host. Once a cash-out, withdrawal, or top-up has settled, rendering its reply and handing that reply to the transport cannot fail the turn: a chat outage or an unrenderable order summary is logged, the result is still returned with its text and its halt, and the operation is never resubmitted because its receipt could not be delivered.
-- Venmo, Cash App, and PayPal orders attach an access policy transaction after the deposit confirms. The plugin reports its hash, and a policy failure surfaces the recovery data instead of retrying blind.
-- Wise and PayPal need a Peer identity attestation for new payee registrations, which first-party Peer web obtains through the Peer TEE browser extension. Already registered handles work directly. `PEER_CASH_CAPABILITIES` flags these platforms.
+- Venmo and PayPal orders attach method-scoped Peer Pay access-policy transactions after the deposit confirms. The plugin reports every confirmed policy hash, and a policy failure surfaces the recovery data instead of retrying blind. Cash App stays public and does not take a policy follow-up.
+- Wise, PayPal, and Alipay need a Peer identity attestation for new payee registrations, which first-party Peer web obtains through the Peer TEE browser extension. Already registered handles work directly. `PEER_CASH_CAPABILITIES` flags these platforms.
 
 ## Earn the integration share
 
